@@ -17,9 +17,12 @@ lerna-debug.log*
 .env.test.local
 .env.production.local
 server/.env
+*.env
 
 # IDE/Editor
 .vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
 .idea/
 *.swp
 *.swo
@@ -29,7 +32,47 @@ server/.env
 .DS_Store
 Thumbs.db
 *.pem
+desktop.ini
 
 # Build outputs
 dist/
 build/
+
+# Uploads directory (user-generated content)
+uploads/
+server/uploads/
+public/uploads/
+
+# Database files (if using local)
+*.db
+*.sqlite
+*.sqlite3
+
+# Testing
+coverage/
+.nyc_output/
+
+# Cache
+.eslintcache
+*.cache
+.cache/
+
+# Temporary files
+*.tmp
+*.temp
+.temp/
+.tmp/
+
+# Package manager
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+.yarn/
+.pnpm-store/
+
+# TypeScript
+*.tsbuildinfo
+
+# Session files
+sessions/
+*.session

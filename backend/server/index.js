@@ -5,8 +5,23 @@ const mongoose = require("mongoose");
 const dotenv = require("dotenv");
 const cors = require("cors");
 const path = require("path");
+const webPush = require("web-push");
 
 dotenv.config();
+
+// Setup web-push with VAPID keys
+if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+  webPush.setVapidDetails(
+    process.env.VAPID_SUBJECT || "mailto:admin@example.com",
+    process.env.VAPID_PUBLIC_KEY,
+    process.env.VAPID_PRIVATE_KEY
+  );
+  console.log("✅ Web Push configured with VAPID keys");
+} else {
+  console.warn(
+    "⚠️  VAPID keys not found. Browser push notifications will not work. Run: npx web-push generate-vapid-keys"
+  );
+}
 
 // models live in ../models (one level above server/)
 const Message = require("../models/Message"); // see schema below
@@ -18,6 +33,7 @@ const RServer = require("../models/Server");
 const authRoutes = require("./auth");
 const serverRoutes = require("./servers");
 const uploadRoutes = require("./upload");
+const notificationRoutes = require("./notifications");
 const authMiddleware = require("./middleware/auth");
 
 const app = express();
@@ -35,6 +51,9 @@ app.use("/api/servers", authMiddleware, serverRoutes);
 
 // Upload routes (protected)
 app.use("/api", authMiddleware, uploadRoutes);
+
+// Notification routes (protected)
+app.use("/api/notifications", authMiddleware, notificationRoutes);
 
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
@@ -432,6 +451,118 @@ io.on("connection", (socket) => {
         // Emit only to users in this specific server-scoped room
         const scopedRoom = `${serverId}:${room}`;
         io.to(scopedRoom).emit("newMessage", msg);
+
+        // Track mentions for notifications
+        if (mentions.length > 0) {
+          try {
+            // Get server info for notification
+            const server = await db
+              .collection("servers")
+              .findOne({ _id: new ObjectId(serverId) });
+
+            for (const mentionedUsername of mentions) {
+              // Don't notify if user mentioned themselves
+              if (mentionedUsername === username) continue;
+
+              // Use native driver with timeout for faster queries
+              const mentionedUser = await db.collection("users").findOne(
+                { username: mentionedUsername },
+                { maxTimeMS: 2000 } // 2 second timeout
+              );
+
+              if (mentionedUser) {
+                // Check notification settings
+                const notificationSettings =
+                  mentionedUser.notificationSettings || {};
+                const serverSettings =
+                  notificationSettings[serverId.toString()];
+                const notificationsEnabled =
+                  !serverSettings || serverSettings.enabled !== false;
+                const channelMuted =
+                  serverSettings?.mutedChannels?.includes(room);
+
+                if (notificationsEnabled && !channelMuted) {
+                  // Prepare mention data
+                  const key = `${serverId}_${room}`;
+                  const newMention = {
+                    serverId: serverId.toString(),
+                    serverName: server?.name || "Unknown Server",
+                    channelId: room,
+                    channelName: room,
+                    messageId: msg._id.toString(),
+                    timestamp: new Date(),
+                  };
+
+                  // Use atomic update with native driver for better performance
+                  await db.collection("users").updateOne(
+                    { _id: mentionedUser._id },
+                    {
+                      $push: { [`unreadMentions.${key}`]: newMention },
+                    },
+                    { maxTimeMS: 2000 }
+                  );
+
+                  // Emit notification to the mentioned user if they're online
+                  io.to(`server-${serverId}`).emit("newMention", {
+                    username: mentionedUsername,
+                    serverId: serverId.toString(),
+                    channelId: room,
+                    messageId: msg._id.toString(),
+                  });
+
+                  // Send browser push notification if subscription exists
+                  if (mentionedUser.pushSubscription) {
+                    try {
+                      const webpush = require("web-push");
+
+                      // You'll need to set VAPID keys in .env
+                      if (
+                        process.env.VAPID_PUBLIC_KEY &&
+                        process.env.VAPID_PRIVATE_KEY
+                      ) {
+                        webpush.setVapidDetails(
+                          "mailto:your-email@example.com",
+                          process.env.VAPID_PUBLIC_KEY,
+                          process.env.VAPID_PRIVATE_KEY
+                        );
+
+                        const payload = JSON.stringify({
+                          title: `${displayName || username} mentioned you`,
+                          body: text.substring(0, 100),
+                          icon: avatar || "/default-avatar.png",
+                          badge: "/badge.png",
+                          data: {
+                            url: `/server/${serverId}/channel/${room}`,
+                            serverId: serverId.toString(),
+                            channelId: room,
+                            messageId: msg._id.toString(),
+                          },
+                        });
+
+                        await webPush.sendNotification(
+                          mentionedUser.pushSubscription,
+                          payload
+                        );
+                      }
+                    } catch (pushError) {
+                      console.error(
+                        "Error sending push notification:",
+                        pushError
+                      );
+                      // If subscription is invalid, remove it
+                      if (pushError.statusCode === 410) {
+                        mentionedUser.pushSubscription = null;
+                        await mentionedUser.save();
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          } catch (mentionErr) {
+            console.error("Error tracking mentions:", mentionErr);
+          }
+        }
       } catch (err) {
         console.error("Error saving message", err.message);
         socket.emit("messageError", { error: "Failed to save message" });

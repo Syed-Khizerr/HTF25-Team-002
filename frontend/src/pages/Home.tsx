@@ -39,6 +39,7 @@ import { useServer } from "@/contexts/ServerContext";
 import ServerModal from "@/components/ServerModal";
 import ProfileModal from "@/components/ProfileModal";
 import ServerIconModal from "@/components/ServerIconModal";
+import { API_URL } from "@/config";
 import "../index.css";
 
 type Message = {
@@ -146,7 +147,7 @@ export default function Home() {
     try {
       const token = localStorage.getItem("token");
       const response = await fetch(
-        `http://localhost:5000/api/servers/${currentServer._id}/channels`,
+        `${API_URL}/api/servers/${currentServer._id}/channels`,
         {
           method: "POST",
           headers: {
@@ -191,7 +192,7 @@ export default function Home() {
     try {
       const token = localStorage.getItem("token");
       const response = await fetch(
-        `http://localhost:5000/api/servers/${currentServer._id}/channels/${channelId}`,
+        `${API_URL}/api/servers/${currentServer._id}/channels/${channelId}`,
         {
           method: "DELETE",
           headers: {
@@ -226,7 +227,7 @@ export default function Home() {
     try {
       const token = localStorage.getItem("token");
       const response = await fetch(
-        `http://localhost:5000/api/servers/${currentServer._id}/channels/${renamingChannel.id}`,
+        `${API_URL}/api/servers/${currentServer._id}/channels/${renamingChannel.id}`,
         {
           method: "PUT",
           headers: {
@@ -307,7 +308,7 @@ export default function Home() {
       try {
         const token = localStorage.getItem("token");
         const response = await fetch(
-          "http://localhost:5000/api/notifications/mentions",
+          `${API_URL}/api/notifications/mentions`,
           {
             headers: {
               Authorization: `Bearer ${token}`,
@@ -378,7 +379,7 @@ export default function Home() {
         const token = localStorage.getItem("token");
         console.log("Fetching members for server:", currentServer._id);
         const response = await fetch(
-          `http://localhost:5000/api/servers/${currentServer._id}/members`,
+          `${API_URL}/api/servers/${currentServer._id}/members`,
           {
             headers: {
               Authorization: `Bearer ${token}`,
@@ -434,7 +435,7 @@ export default function Home() {
     });
 
     fetch(
-      `http://localhost:5000/rooms/${currentRoom}/messages?serverId=${currentServer._id}`
+      `${API_URL}/rooms/${currentRoom}/messages?serverId=${currentServer._id}`
     )
       .then((r) => r.json())
       .then((data) => setMessages(data))
@@ -556,7 +557,7 @@ export default function Home() {
         try {
           const token = localStorage.getItem("token");
           const response = await fetch(
-            "http://localhost:5000/api/notifications/mentions",
+            `${API_URL}/api/notifications/mentions`,
             {
               headers: {
                 Authorization: `Bearer ${token}`,
@@ -594,7 +595,7 @@ export default function Home() {
         try {
           const token = localStorage.getItem("token");
           await fetch(
-            `http://localhost:5000/api/notifications/mentions/${currentServer._id}/${currentRoom}`,
+            `${API_URL}/api/notifications/mentions/${currentServer._id}/${currentRoom}`,
             {
               method: "DELETE",
               headers: {
@@ -664,7 +665,7 @@ export default function Home() {
           const formData = new FormData();
           formData.append("file", file);
 
-          const response = await fetch("http://localhost:5000/api/upload", {
+          const response = await fetch(`${API_URL}/api/upload`, {
             method: "POST",
             headers: {
               Authorization: `Bearer ${token}`,
@@ -954,7 +955,7 @@ export default function Home() {
 
       // TODO: Fix backend User.findById timeout before enabling this
       // const response = await fetch(
-      //   `http://localhost:5000/api/notifications/settings/${currentServer._id}`,
+      //   `${API_URL}/api/notifications/settings/${currentServer._id}`,
       //   {
       //     method: "PUT",
       //     headers: {
@@ -995,7 +996,7 @@ export default function Home() {
 
       // TODO: Fix backend User.findById timeout before enabling this
       // const response = await fetch(
-      //   `http://localhost:5000/api/notifications/settings/${currentServer._id}`,
+      //   `${API_URL}/api/notifications/settings/${currentServer._id}`,
       //   {
       //     method: "PUT",
       //     headers: {
@@ -1057,7 +1058,7 @@ export default function Home() {
           await subscription.unsubscribe();
 
           // Remove from server
-          await fetch("http://localhost:5000/api/notifications/subscribe", {
+          await fetch(`${API_URL}/api/notifications/subscribe`, {
             method: "DELETE",
             headers: {
               Authorization: `Bearer ${token}`,
@@ -1088,7 +1089,7 @@ export default function Home() {
 
           // Send subscription to server
           const response = await fetch(
-            "http://localhost:5000/api/notifications/subscribe",
+            `${API_URL}/api/notifications/subscribe`,
             {
               method: "POST",
               headers: {
@@ -1549,20 +1550,20 @@ export default function Home() {
                             <div key={i}>
                               {file.mimetype.startsWith("image/") ? (
                                 <a
-                                  href={`http://localhost:5000${file.url}`}
+                                  href={`${API_URL}${file.url}`}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="block"
                                 >
                                   <img
-                                    src={`http://localhost:5000${file.url}`}
+                                    src={`${API_URL}${file.url}`}
                                     alt={file.filename}
                                     className="max-w-sm max-h-96 rounded-lg border border-neutral-700 hover:opacity-90 transition-opacity"
                                   />
                                 </a>
                               ) : (
                                 <a
-                                  href={`http://localhost:5000${file.url}`}
+                                  href={`${API_URL}${file.url}`}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="flex items-center gap-2 px-3 py-2 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 rounded-lg transition-colors max-w-sm"
@@ -2742,3 +2743,4 @@ export default function Home() {
     </div>
   );
 }
+

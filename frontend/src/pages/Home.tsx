@@ -78,6 +78,7 @@ export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState("");
   const [presence, setPresence] = useState<UserPresence[]>([]);
+  const [serverMembers, setServerMembers] = useState<UserPresence[]>([]);
   const [showServerModal, setShowServerModal] = useState(false);
   const [showInviteDialog, setShowInviteDialog] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -179,6 +180,47 @@ export default function Home() {
       }
     };
   }, [currentServer, username, currentRoom]);
+
+  // Fetch server members when server changes
+  useEffect(() => {
+    if (!currentServer) {
+      setServerMembers([]);
+      return;
+    }
+
+    const fetchServerMembers = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        console.log("Fetching members for server:", currentServer._id);
+        const response = await fetch(
+          `http://localhost:5000/api/servers/${currentServer._id}/members`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        console.log("Server members response status:", response.status);
+        if (response.ok) {
+          const members = await response.json();
+          console.log("Fetched server members:", members);
+          setServerMembers(members);
+        } else {
+          const errorText = await response.text();
+          console.error(
+            "Failed to fetch server members:",
+            response.status,
+            errorText
+          );
+        }
+      } catch (error) {
+        console.error("Error fetching server members:", error);
+      }
+    };
+
+    fetchServerMembers();
+  }, [currentServer]);
 
   // Update presence when user profile changes (displayName or avatar)
   useEffect(() => {
@@ -421,9 +463,9 @@ export default function Home() {
       if (part.startsWith("@")) {
         const mentionedUsername = part.substring(1);
         const isCurrentUser = mentionedUsername === username;
-        const userExists = presence.some(
-          (user) => user.username === mentionedUsername
-        );
+        const userExists =
+          serverMembers.some((user) => user.username === mentionedUsername) ||
+          presence.some((user) => user.username === mentionedUsername);
 
         // Only highlight if user exists in the server
         if (!userExists) {
@@ -461,7 +503,17 @@ export default function Home() {
         (charBeforeAt === " " || lastAtIndex === 0) &&
         !textAfterAt.includes(" ")
       ) {
-        const filtered = presence.filter(
+        // Combine serverMembers and presence, remove duplicates
+        const allMembers = [...serverMembers];
+        presence.forEach((p) => {
+          if (!allMembers.find((m) => m.username === p.username)) {
+            allMembers.push(p);
+          }
+        });
+
+        console.log("All members for mentions:", allMembers);
+
+        const filtered = allMembers.filter(
           (p) =>
             p.username.toLowerCase().includes(textAfterAt.toLowerCase()) ||
             p.displayName.toLowerCase().includes(textAfterAt.toLowerCase())
@@ -502,9 +554,9 @@ export default function Home() {
 
       // Check if the mentioned user exists in the server
       const mentionedUsername = match[1]; // Get username without @
-      const userExists = presence.some(
-        (user) => user.username === mentionedUsername
-      );
+      const userExists =
+        serverMembers.some((user) => user.username === mentionedUsername) ||
+        presence.some((user) => user.username === mentionedUsername);
 
       // Add the mention (highlighted only if user exists)
       parts.push(

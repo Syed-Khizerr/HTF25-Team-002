@@ -486,4 +486,114 @@ router.delete("/:serverId/channels/:channelId", async (req, res) => {
   }
 });
 
+// Rename a channel in a server
+router.put("/:serverId/channels/:channelId", async (req, res) => {
+  try {
+    const { serverId, channelId } = req.params;
+    const { name } = req.body;
+    const userId = req.userId;
+
+    if (!name || name.trim().length === 0) {
+      return res.status(400).json({ error: "Channel name is required" });
+    }
+
+    // Validate channel name (alphanumeric and hyphens only)
+    const channelName = name.trim().toLowerCase().replace(/\s+/g, "-");
+    if (!/^[a-z0-9-]+$/.test(channelName)) {
+      return res.status(400).json({
+        error: "Channel name can only contain letters, numbers, and hyphens",
+      });
+    }
+
+    const db = getDb();
+    const serversCollection = db.collection("servers");
+    const roomsCollection = db.collection("rooms");
+    const messagesCollection = db.collection("messages");
+
+    // Find the server and check if user is owner
+    const server = await serversCollection.findOne({
+      _id: new ObjectId(serverId),
+    });
+
+    if (!server) {
+      return res.status(404).json({ error: "Server not found" });
+    }
+
+    // Check if user is owner
+    if (server.ownerId.toString() !== userId) {
+      return res.status(403).json({
+        error: "Only the server owner can rename channels",
+      });
+    }
+
+    // Find the channel
+    const channel = await roomsCollection.findOne({
+      _id: new ObjectId(channelId),
+      serverId: new ObjectId(serverId),
+    });
+
+    if (!channel) {
+      return res.status(404).json({ error: "Channel not found" });
+    }
+
+    // Check if new name is the same as current name
+    if (channel.name === channelName) {
+      return res.status(400).json({
+        error: "New name is the same as current name",
+      });
+    }
+
+    // Check if channel with new name already exists
+    const existingChannel = await roomsCollection.findOne({
+      serverId: new ObjectId(serverId),
+      name: channelName,
+      _id: { $ne: new ObjectId(channelId) },
+    });
+
+    if (existingChannel) {
+      return res.status(400).json({
+        error: "A channel with this name already exists",
+      });
+    }
+
+    const oldName = channel.name;
+
+    // Update channel name
+    await roomsCollection.updateOne(
+      { _id: new ObjectId(channelId) },
+      {
+        $set: {
+          name: channelName,
+          updatedAt: new Date(),
+        },
+      }
+    );
+
+    // Update all messages in the channel to reflect the new room name
+    await messagesCollection.updateMany(
+      {
+        room: oldName,
+        serverId: new ObjectId(serverId),
+      },
+      {
+        $set: {
+          room: channelName,
+        },
+      }
+    );
+
+    res.json({
+      message: "Channel renamed successfully",
+      channel: {
+        _id: channelId,
+        name: channelName,
+        oldName: oldName,
+      },
+    });
+  } catch (error) {
+    console.error("Error renaming channel:", error);
+    res.status(500).json({ error: "Failed to rename channel" });
+  }
+});
+
 module.exports = router;

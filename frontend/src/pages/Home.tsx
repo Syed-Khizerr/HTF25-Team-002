@@ -32,6 +32,7 @@ import {
   Search,
   Bell,
   BellOff,
+  Edit,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useServer } from "@/contexts/ServerContext";
@@ -75,7 +76,8 @@ type UserPresence = {
 
 export default function Home() {
   const { user, logout } = useAuth();
-  const { servers, currentServer, channels, setCurrentServer } = useServer();
+  const { servers, currentServer, channels, setCurrentServer, fetchChannels } =
+    useServer();
   const [currentRoom, setCurrentRoom] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState("");
@@ -127,6 +129,12 @@ export default function Home() {
   const [showChannelManage, setShowChannelManage] = useState(false);
   const [newChannelName, setNewChannelName] = useState("");
   const [creatingChannel, setCreatingChannel] = useState(false);
+  const [renamingChannel, setRenamingChannel] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+  const [renameChannelName, setRenameChannelName] = useState("");
+  const [updatingChannel, setUpdatingChannel] = useState(false);
 
   const username = user?.username || "Guest";
 
@@ -154,8 +162,8 @@ export default function Home() {
         console.log("Channel created:", data);
         setNewChannelName("");
         setShowChannelManage(false);
-        // Refresh channels by re-fetching from server context
-        window.location.reload(); // Simple refresh for now
+        // Refresh channels without reloading the page
+        await fetchChannels(currentServer._id);
       } else {
         const error = await response.json();
         alert(error.error || "Failed to create channel");
@@ -198,8 +206,8 @@ export default function Home() {
         if (currentRoom === channelName) {
           setCurrentRoom(null);
         }
-        // Refresh channels
-        window.location.reload();
+        // Refresh channels without reloading the page
+        await fetchChannels(currentServer._id);
       } else {
         const error = await response.json();
         alert(error.error || "Failed to delete channel");
@@ -207,6 +215,48 @@ export default function Home() {
     } catch (error) {
       console.error("Error deleting channel:", error);
       alert("Failed to delete channel");
+    }
+  };
+
+  // Rename a channel
+  const renameChannel = async () => {
+    if (!currentServer || !renamingChannel || !renameChannelName.trim()) return;
+
+    setUpdatingChannel(true);
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(
+        `http://localhost:5000/api/servers/${currentServer._id}/channels/${renamingChannel.id}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ name: renameChannelName.trim() }),
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log("Channel renamed:", data);
+        // If current room was renamed, update it
+        if (currentRoom === renamingChannel.name) {
+          setCurrentRoom(data.channel.name);
+        }
+        setRenamingChannel(null);
+        setRenameChannelName("");
+        // Refresh channels without reloading the page
+        await fetchChannels(currentServer._id);
+      } else {
+        const error = await response.json();
+        alert(error.error || "Failed to rename channel");
+      }
+    } catch (error) {
+      console.error("Error renaming channel:", error);
+      alert("Failed to rename channel");
+    } finally {
+      setUpdatingChannel(false);
     }
   };
 
@@ -1244,16 +1294,32 @@ export default function Home() {
                 )}
               </span>
               {currentServer?.ownerId === user?.id && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    deleteChannel(channel._id, channel.name);
-                  }}
-                  className="ml-auto opacity-0 group-hover:opacity-100 p-1 hover:bg-red-600/20 rounded transition-all"
-                  title="Delete Channel"
-                >
-                  <Trash2 className="h-3 w-3 text-red-400" />
-                </button>
+                <div className="ml-auto flex gap-1 opacity-0 group-hover:opacity-100">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setRenamingChannel({
+                        id: channel._id,
+                        name: channel.name,
+                      });
+                      setRenameChannelName(channel.name);
+                    }}
+                    className="p-1 hover:bg-blue-600/20 rounded transition-all"
+                    title="Rename Channel"
+                  >
+                    <Edit className="h-3 w-3 text-blue-400" />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteChannel(channel._id, channel.name);
+                    }}
+                    className="p-1 hover:bg-red-600/20 rounded transition-all"
+                    title="Delete Channel"
+                  >
+                    <Trash2 className="h-3 w-3 text-red-400" />
+                  </button>
+                </div>
               )}
               {currentRoom === channel.name && (
                 <div className="absolute inset-0 bg-linear-to-r from-blue-600/20 to-purple-600/20 blur-xl -z-10"></div>
@@ -2604,6 +2670,71 @@ export default function Home() {
               className="bg-blue-600 hover:bg-blue-700 text-white"
             >
               {creatingChannel ? "Creating..." : "Create Channel"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Channel Rename Dialog */}
+      <Dialog
+        open={renamingChannel !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRenamingChannel(null);
+            setRenameChannelName("");
+          }
+        }}
+      >
+        <DialogContent className="bg-neutral-900 border-neutral-800 text-white">
+          <DialogHeader>
+            <DialogTitle>Rename Channel</DialogTitle>
+            <DialogDescription className="text-neutral-400">
+              Rename #{renamingChannel?.name} in {currentServer?.name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-neutral-300">
+                Channel Name
+              </label>
+              <Input
+                value={renameChannelName}
+                onChange={(e) => setRenameChannelName(e.target.value)}
+                placeholder="channel-name"
+                className="bg-neutral-800 border-neutral-700 text-white"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && renameChannelName.trim()) {
+                    renameChannel();
+                  }
+                }}
+                autoFocus
+              />
+              <p className="text-xs text-neutral-500">
+                Use lowercase letters, numbers, and hyphens only
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setRenamingChannel(null);
+                setRenameChannelName("");
+              }}
+              className="hover:bg-neutral-800"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={renameChannel}
+              disabled={
+                updatingChannel ||
+                !renameChannelName.trim() ||
+                renameChannelName === renamingChannel?.name
+              }
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              {updatingChannel ? "Renaming..." : "Rename Channel"}
             </Button>
           </div>
         </DialogContent>

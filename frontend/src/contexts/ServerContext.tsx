@@ -39,7 +39,7 @@ interface ServerContextType {
 
 const ServerContext = createContext<ServerContextType | undefined>(undefined);
 
-const API_URL = "http://localhost:5000/api/servers";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 export function ServerProvider({ children }: { children: React.ReactNode }) {
   const { token } = useAuth();
@@ -76,7 +76,7 @@ export function ServerProvider({ children }: { children: React.ReactNode }) {
 
     try {
       const response = await axios.get(
-        `${API_URL}/${serverId}/channels`,
+        `${API_URL}/api/servers/${serverId}/channels`,
         getAuthHeaders()
       );
       setChannels(response.data);
@@ -90,7 +90,7 @@ export function ServerProvider({ children }: { children: React.ReactNode }) {
 
     try {
       const response = await axios.post(
-        API_URL,
+        `${API_URL}/api/servers`,
         { name, icon },
         getAuthHeaders()
       );
@@ -109,7 +109,7 @@ export function ServerProvider({ children }: { children: React.ReactNode }) {
 
     try {
       const response = await axios.post(
-        `${API_URL}/join`,
+        `${API_URL}/api/servers/join`,
         { inviteCode },
         getAuthHeaders()
       );
@@ -127,7 +127,10 @@ export function ServerProvider({ children }: { children: React.ReactNode }) {
     if (!token) return;
 
     try {
-      await axios.delete(`${API_URL}/${serverId}/leave`, getAuthHeaders());
+      await axios.delete(
+        `${API_URL}/api/servers/${serverId}/leave`,
+        getAuthHeaders()
+      );
       const updatedServers = servers.filter((s) => s._id !== serverId);
       setServers(updatedServers);
 
@@ -146,7 +149,7 @@ export function ServerProvider({ children }: { children: React.ReactNode }) {
 
     try {
       const response = await axios.put(
-        `${API_URL}/${serverId}/icon`,
+        `${API_URL}/api/servers/${serverId}/icon`,
         { icon },
         getAuthHeaders()
       );

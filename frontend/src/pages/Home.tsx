@@ -30,6 +30,8 @@ import {
   MoreHorizontal,
   Pin,
   Search,
+  Bell,
+  BellOff,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useServer } from "@/contexts/ServerContext";
@@ -101,6 +103,27 @@ export default function Home() {
     x: number;
     y: number;
   } | null>(null);
+  const [notificationSettings, setNotificationSettings] = useState<{
+    enabled: boolean;
+    mutedChannels: string[];
+  }>({ enabled: true, mutedChannels: [] });
+  const [unreadMentions, setUnreadMentions] = useState<
+    Record<
+      string,
+      Array<{
+        serverId: string;
+        serverName: string;
+        channelId: string;
+        channelName: string;
+        messageId: string;
+        timestamp: string;
+      }>
+    >
+  >({});
+  const [showNotificationSettings, setShowNotificationSettings] =
+    useState(false);
+  const [pushNotificationsEnabled, setPushNotificationsEnabled] =
+    useState(false);
 
   const username = user?.username || "Guest";
 
@@ -142,6 +165,35 @@ export default function Home() {
       document.removeEventListener("click", handleClickOutside);
     };
   }, [showMoreMenu, contextMenu]);
+
+  // Load unread mentions on mount
+  useEffect(() => {
+    if (!username) return;
+
+    const loadInitialMentions = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const response = await fetch(
+          "http://localhost:5000/api/notifications/mentions",
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        if (response.ok) {
+          const mentions = await response.json();
+          console.log("📥 Loaded initial mentions on mount:", mentions);
+          setUnreadMentions(mentions);
+        }
+      } catch (error) {
+        console.error("Error loading initial mentions:", error);
+      }
+    };
+
+    loadInitialMentions();
+  }, [username]);
 
   // Auto-select first channel when server changes
   useEffect(() => {
@@ -332,6 +384,136 @@ export default function Home() {
       socket.off("presence", onPresence);
     };
   }, []); // No dependencies - only set up once
+
+  // Load notification settings when server changes
+  useEffect(() => {
+    // DISABLED: Causing MongoDB timeout errors
+    // TODO: Debug why User.findById is timing out in notification routes
+    setNotificationSettings({ enabled: true, mutedChannels: [] });
+  }, [currentServer]);
+
+  // Load unread mentions on mount
+  useEffect(() => {
+    // DISABLED: Causing MongoDB timeout errors
+    // TODO: Debug why User.findById is timing out in notification routes
+    setUnreadMentions({});
+  }, []);
+
+  // Listen for new mentions
+  useEffect(() => {
+    const handleNewMention = (data: {
+      username: string;
+      serverId: string;
+      channelId: string;
+      messageId: string;
+    }) => {
+      console.log("🔔 newMention event received:", data);
+      console.log("Current username:", username);
+
+      // Only track if it's for the current user
+      if (data.username !== username) {
+        console.log("⏭️ Mention not for this user, skipping");
+        return;
+      }
+
+      console.log("✅ Mention is for this user, loading mentions...");
+
+      // Reload mentions
+      const loadUnreadMentions = async () => {
+        try {
+          const token = localStorage.getItem("token");
+          const response = await fetch(
+            "http://localhost:5000/api/notifications/mentions",
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            }
+          );
+
+          if (response.ok) {
+            const mentions = await response.json();
+            console.log("📬 Loaded mentions from API:", mentions);
+            setUnreadMentions(mentions);
+          }
+        } catch (error) {
+          console.error("Error loading unread mentions:", error);
+        }
+      };
+
+      loadUnreadMentions();
+    };
+
+    socket.on("newMention", handleNewMention);
+
+    return () => {
+      socket.off("newMention", handleNewMention);
+    };
+  }, [username]);
+
+  // Clear mentions when viewing a channel
+  useEffect(() => {
+    if (!currentServer || !currentRoom || !username) return;
+
+    const clearMentions = async () => {
+      const key = `${currentServer._id}_${currentRoom}`;
+      if (unreadMentions[key]) {
+        try {
+          const token = localStorage.getItem("token");
+          await fetch(
+            `http://localhost:5000/api/notifications/mentions/${currentServer._id}/${currentRoom}`,
+            {
+              method: "DELETE",
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            }
+          );
+
+          // Update local state
+          setUnreadMentions((prev) => {
+            const newMentions = { ...prev };
+            delete newMentions[key];
+            return newMentions;
+          });
+        } catch (error) {
+          console.error("Error clearing mentions:", error);
+        }
+      }
+    };
+
+    // Clear mentions after a short delay to ensure user is actually viewing
+    const timer = setTimeout(clearMentions, 1000);
+
+    return () => clearTimeout(timer);
+  }, [currentServer, currentRoom, username, unreadMentions]);
+
+  // Request browser notification permission and register service worker
+  useEffect(() => {
+    const setupPushNotifications = async () => {
+      if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+        console.log("Push notifications not supported");
+        return;
+      }
+
+      try {
+        // Register service worker
+        const registration = await navigator.serviceWorker.register("/sw.js");
+
+        // Check if already subscribed
+        const existingSubscription =
+          await registration.pushManager.getSubscription();
+
+        if (existingSubscription) {
+          setPushNotificationsEnabled(true);
+        }
+      } catch (error) {
+        console.error("Error setting up push notifications:", error);
+      }
+    };
+
+    setupPushNotifications();
+  }, []);
 
   const sendMessage = async () => {
     if (!currentRoom || !currentServer) return;
@@ -622,6 +804,215 @@ export default function Home() {
     return colors[index];
   };
 
+  // Toggle server notifications
+  const toggleServerNotifications = async () => {
+    if (!currentServer) return;
+
+    try {
+      // DISABLED: API call causes MongoDB timeout
+      // const token = localStorage.getItem("token");
+      const newSettings = {
+        ...notificationSettings,
+        enabled: !notificationSettings.enabled,
+      };
+
+      // Just update local state for now
+      setNotificationSettings(newSettings);
+
+      // TODO: Fix backend User.findById timeout before enabling this
+      // const response = await fetch(
+      //   `http://localhost:5000/api/notifications/settings/${currentServer._id}`,
+      //   {
+      //     method: "PUT",
+      //     headers: {
+      //       "Content-Type": "application/json",
+      //       Authorization: `Bearer ${token}`,
+      //     },
+      //     body: JSON.stringify(newSettings),
+      //   }
+      // );
+
+      // if (response.ok) {
+      //   setNotificationSettings(newSettings);
+      // }
+    } catch (error) {
+      console.error("Error toggling notifications:", error);
+    }
+  };
+
+  // Toggle channel mute
+  const toggleChannelMute = async (channelName: string) => {
+    if (!currentServer) return;
+
+    try {
+      // DISABLED: API call causes MongoDB timeout
+      // const token = localStorage.getItem("token");
+      const mutedChannels = notificationSettings.mutedChannels || [];
+      const newMutedChannels = mutedChannels.includes(channelName)
+        ? mutedChannels.filter((c) => c !== channelName)
+        : [...mutedChannels, channelName];
+
+      const newSettings = {
+        ...notificationSettings,
+        mutedChannels: newMutedChannels,
+      };
+
+      // Just update local state for now
+      setNotificationSettings(newSettings);
+
+      // TODO: Fix backend User.findById timeout before enabling this
+      // const response = await fetch(
+      //   `http://localhost:5000/api/notifications/settings/${currentServer._id}`,
+      //   {
+      //     method: "PUT",
+      //     headers: {
+      //       "Content-Type": "application/json",
+      //       Authorization: `Bearer ${token}`,
+      //     },
+      //     body: JSON.stringify(newSettings),
+      //   }
+      // );
+
+      // if (response.ok) {
+      //   setNotificationSettings(newSettings);
+      // }
+    } catch (error) {
+      console.error("Error toggling channel mute:", error);
+    }
+  };
+
+  // Check if channel has unread mentions
+  const hasUnreadMentions = (serverId: string, channelId: string) => {
+    const key = `${serverId}_${channelId}`;
+    const hasMentions = unreadMentions[key] && unreadMentions[key].length > 0;
+
+    // Debug log - only log when checking
+    if (Object.keys(unreadMentions).length > 0) {
+      console.log(`🔍 Checking mentions for ${channelId}:`, {
+        key,
+        hasMentions,
+        allKeys: Object.keys(unreadMentions),
+        mentions: unreadMentions[key],
+      });
+    }
+
+    return hasMentions;
+  };
+
+  // Check if server has any unread mentions
+  const serverHasUnreadMentions = (serverId: string) => {
+    return Object.keys(unreadMentions).some((key) =>
+      key.startsWith(`${serverId}_`)
+    );
+  };
+
+  // Toggle browser push notifications
+  const togglePushNotifications = async () => {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      alert("Push notifications are not supported in your browser");
+      return;
+    }
+
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const token = localStorage.getItem("token");
+
+      if (pushNotificationsEnabled) {
+        // Unsubscribe
+        const subscription = await registration.pushManager.getSubscription();
+        if (subscription) {
+          await subscription.unsubscribe();
+
+          // Remove from server
+          await fetch("http://localhost:5000/api/notifications/subscribe", {
+            method: "DELETE",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+
+          setPushNotificationsEnabled(false);
+        }
+      } else {
+        // Subscribe
+        const permission = await Notification.requestPermission();
+
+        if (permission !== "granted") {
+          alert("Please allow notifications to enable push notifications");
+          return;
+        }
+
+        // You'll need to generate VAPID keys and add the public key here
+        // Run: npx web-push generate-vapid-keys
+        const VAPID_PUBLIC_KEY =
+          "BFn5pDJ4Bh59oai9qrwQheL7onXPao6L_t4F5qWm2N7ljStdZvbBIisFbDcUkNkJ9W9HRjqeqiDZxsLnB6obOac";
+
+        try {
+          const subscription = await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+          });
+
+          // Send subscription to server
+          const response = await fetch(
+            "http://localhost:5000/api/notifications/subscribe",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({ subscription }),
+            }
+          );
+
+          if (!response.ok) {
+            throw new Error(`Failed to save subscription: ${response.status}`);
+          }
+
+          setPushNotificationsEnabled(true);
+        } catch (subError: any) {
+          console.error("Subscription error:", subError);
+          if (
+            subError.name === "AbortError" ||
+            subError.message?.includes("push service")
+          ) {
+            alert(
+              "Push notifications are not available. This may be because:\n" +
+                "- You're using HTTP instead of HTTPS (localhost is an exception)\n" +
+                "- Your browser doesn't support push notifications\n" +
+                "- The push service is temporarily unavailable\n\n" +
+                "You can still use the visual notification indicators (red dots)."
+            );
+          } else {
+            throw subError;
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error toggling push notifications:", error);
+      alert(
+        "An error occurred while toggling push notifications. Check the console for details."
+      );
+    }
+  };
+
+  // Helper function to convert VAPID key
+  const urlBase64ToUint8Array = (base64String: string) => {
+    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding)
+      .replace(/\-/g, "+")
+      .replace(/_/g, "/");
+
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  };
+
   // Show modal if user has no servers
   if (servers.length === 0) {
     return (
@@ -670,6 +1061,9 @@ export default function Home() {
             }`}
           >
             {server.icon}
+            {serverHasUnreadMentions(server._id) && (
+              <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-600 rounded-full border-2 border-black animate-pulse shadow-glow"></span>
+            )}
             <span className="z-10 absolute left-full bottom-0 mb-2 ml-2 hidden group-hover:flex bg-linear-to-r from-blue-600 to-purple-600 text-white text-sm px-3 py-1.5 rounded-lg shadow-elevation-high whitespace-nowrap backdrop-blur-sm border border-white/10 animate-in fade-in slide-in-from-left-2">
               {server.ownerId === user?.id
                 ? `${server.name} (Right-click to change icon)`
@@ -698,17 +1092,36 @@ export default function Home() {
             <h1 className="text-xl font-bold bg-linear-to-r from-blue-600 via-purple-600 to-blue-600 bg-clip-text text-transparent transition-all duration-500 hover:pb-2 hover:scale-105 hover:cursor-pointer bg-size-[200%] hover:bg-right animate-in fade-in slide-in-from-left-3">
               {currentServer?.name || "StudyRooms"}
             </h1>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setShowInviteDialog(true)}
-              className="relative group h-8 w-8 p-0 text-neutral-400 hover:text-white hover:bg-neutral-800/70 hover:scale-110 transition-all duration-200 rounded-lg"
-            >
-              <UserPlus className="h-4 w-4" />
-              <span className="absolute right-full mr-2 top-1/2 -translate-y-1/2 hidden group-hover:flex bg-linear-to-r from-blue-600 to-purple-600 text-white text-xs px-3 py-1.5 rounded-lg shadow-elevation-high whitespace-nowrap z-50 backdrop-blur-sm border border-white/10 animate-in fade-in slide-in-from-right-2">
-                Invite People
-              </span>
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() =>
+                  setShowNotificationSettings(!showNotificationSettings)
+                }
+                className="relative group h-8 w-8 p-0 text-neutral-400 hover:text-white hover:bg-neutral-800/70 hover:scale-110 transition-all duration-200 rounded-lg"
+              >
+                {notificationSettings.enabled ? (
+                  <Bell className="h-4 w-4" />
+                ) : (
+                  <BellOff className="h-4 w-4" />
+                )}
+                <span className="absolute right-full mr-2 top-1/2 -translate-y-1/2 hidden group-hover:flex bg-linear-to-r from-blue-600 to-purple-600 text-white text-xs px-3 py-1.5 rounded-lg shadow-elevation-high whitespace-nowrap z-50 backdrop-blur-sm border border-white/10 animate-in fade-in slide-in-from-right-2">
+                  Notifications
+                </span>
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setShowInviteDialog(true)}
+                className="relative group h-8 w-8 p-0 text-neutral-400 hover:text-white hover:bg-neutral-800/70 hover:scale-110 transition-all duration-200 rounded-lg"
+              >
+                <UserPlus className="h-4 w-4" />
+                <span className="absolute right-full mr-2 top-1/2 -translate-y-1/2 hidden group-hover:flex bg-linear-to-r from-blue-600 to-purple-600 text-white text-xs px-3 py-1.5 rounded-lg shadow-elevation-high whitespace-nowrap z-50 backdrop-blur-sm border border-white/10 animate-in fade-in slide-in-from-right-2">
+                  Invite People
+                </span>
+              </Button>
+            </div>
           </div>
           <p className="text-xs mt-1 mb-5 text-neutral-400 font-medium">
             ✨ {currentServer?.members.length || 0} members
@@ -732,7 +1145,12 @@ export default function Home() {
               style={{ animationDelay: `${index * 50}ms` }}
             >
               <Hash className="h-4 w-4 transition-transform group-hover:scale-110" />
-              <span className="relative z-10">{channel.name}</span>
+              <span className="relative z-10 flex items-center gap-2">
+                {channel.name}
+                {hasUnreadMentions(currentServer?._id || "", channel.name) && (
+                  <span className="w-2 h-2 bg-red-600 rounded-full animate-pulse shadow-glow"></span>
+                )}
+              </span>
               {currentRoom === channel.name && (
                 <div className="absolute inset-0 bg-linear-to-r from-blue-600/20 to-purple-600/20 blur-xl -z-10"></div>
               )}
@@ -1793,6 +2211,130 @@ export default function Home() {
                 💡 <strong>How to join:</strong> Click the{" "}
                 <Plus className="inline h-3 w-3" /> button in the server list,
                 select "Join a Server", and paste this code.
+              </p>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Notification Settings Dialog */}
+      <Dialog
+        open={showNotificationSettings}
+        onOpenChange={setShowNotificationSettings}
+      >
+        <DialogContent className="bg-neutral-900 border-neutral-800 text-white">
+          <DialogHeader>
+            <DialogTitle>Notification Settings</DialogTitle>
+            <DialogDescription className="text-neutral-400">
+              Manage how you receive notifications for {currentServer?.name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6 py-4">
+            {/* Server Notifications Toggle */}
+            <div className="flex items-center justify-between p-4 bg-neutral-800/50 rounded-lg border border-neutral-700/50">
+              <div className="flex-1">
+                <label className="text-sm font-medium text-white">
+                  Enable Notifications
+                </label>
+                <p className="text-xs text-neutral-400 mt-1">
+                  Receive notifications for mentions in this server
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                {notificationSettings.enabled ? (
+                  <Bell className="h-5 w-5 text-blue-500" />
+                ) : (
+                  <BellOff className="h-5 w-5 text-neutral-500" />
+                )}
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={notificationSettings.enabled}
+                    onChange={toggleServerNotifications}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-neutral-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                </label>
+              </div>
+            </div>
+
+            {/* Browser Push Notifications Toggle */}
+            <div className="flex items-center justify-between p-4 bg-neutral-800/50 rounded-lg border border-neutral-700/50">
+              <div className="flex-1">
+                <label className="text-sm font-medium text-white">
+                  Browser Push Notifications
+                </label>
+                <p className="text-xs text-neutral-400 mt-1">
+                  Get push notifications even when the app is closed
+                </p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={pushNotificationsEnabled}
+                  onChange={togglePushNotifications}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-neutral-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </div>
+
+            {/* Muted Channels */}
+            {notificationSettings.enabled && (
+              <div className="space-y-3">
+                <label className="text-sm font-medium text-white">
+                  Muted Channels
+                </label>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {channels.map((channel) => {
+                    const isMuted =
+                      notificationSettings.mutedChannels?.includes(
+                        channel.name
+                      );
+                    return (
+                      <div
+                        key={channel._id}
+                        className="flex items-center justify-between p-3 bg-neutral-800/30 rounded-lg border border-neutral-700/30 hover:bg-neutral-800/50 transition-all"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Hash className="h-4 w-4 text-neutral-500" />
+                          <span className="text-sm text-neutral-300">
+                            {channel.name}
+                          </span>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => toggleChannelMute(channel.name)}
+                          className={`h-7 px-3 text-xs ${
+                            isMuted
+                              ? "text-red-400 hover:text-red-300"
+                              : "text-neutral-400 hover:text-white"
+                          }`}
+                        >
+                          {isMuted ? (
+                            <>
+                              <BellOff className="h-3 w-3 mr-1" />
+                              Muted
+                            </>
+                          ) : (
+                            <>
+                              <Bell className="h-3 w-3 mr-1" />
+                              Unmuted
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div className="bg-blue-900/20 border border-blue-800/30 rounded-lg p-3">
+              <p className="text-xs text-blue-300">
+                💡 <strong>Tip:</strong> You'll get notifications when someone
+                mentions you with @username in channels that aren't muted.
               </p>
             </div>
           </div>

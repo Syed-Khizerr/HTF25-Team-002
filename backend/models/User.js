@@ -33,6 +33,21 @@ const userSchema = new mongoose.Schema({
   avatar: {
     type: String, // URL for Google profile picture
   },
+  // Notification settings per server (simplified - not using Map)
+  notificationSettings: {
+    type: Object,
+    default: {},
+  },
+  // Unread mentions tracking (simplified - not using Map)
+  unreadMentions: {
+    type: Object,
+    default: {},
+  },
+  // Browser push notification subscription
+  pushSubscription: {
+    type: Object,
+    default: null,
+  },
   createdAt: {
     type: Date,
     default: Date.now,

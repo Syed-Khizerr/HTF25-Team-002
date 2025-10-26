@@ -37,7 +37,12 @@ const notificationRoutes = require("./notifications");
 const authMiddleware = require("./middleware/auth");
 
 const app = express();
-app.use(cors());
+app.use(
+  cors({
+    origin: ["https://study-room-eta.vercel.app", "http://localhost:5173"],
+    credentials: true,
+  })
+);
 app.use(express.json());
 
 // Serve uploaded files statically
@@ -56,7 +61,12 @@ app.use("/api", authMiddleware, uploadRoutes);
 app.use("/api/notifications", authMiddleware, notificationRoutes);
 
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
+const io = new Server(server, {
+  cors: {
+    origin: ["https://study-room-eta.vercel.app", "http://localhost:5173"],
+    credentials: true,
+  },
+});
 
 // MongoDB - use Atlas connection string in env
 const MONGO =

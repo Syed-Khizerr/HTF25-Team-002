@@ -7,7 +7,12 @@
     "start": "node server/index.js",
     "dev": "nodemon server/index.js"
   },
-  "keywords": ["chat", "real-time", "socket.io", "mongodb"],
+  "keywords": [
+    "chat",
+    "real-time",
+    "socket.io",
+    "mongodb"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {

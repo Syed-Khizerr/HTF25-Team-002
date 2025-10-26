@@ -336,6 +336,7 @@ router.get("/:serverId/members", async (req, res) => {
 
     // Map to user details
     const members = users.map((user) => ({
+      userId: user._id.toString(),
       username: user.username,
       displayName: user.displayName || user.username,
       avatar: user.avatar || null,
@@ -593,6 +594,173 @@ router.put("/:serverId/channels/:channelId", async (req, res) => {
   } catch (error) {
     console.error("Error renaming channel:", error);
     res.status(500).json({ error: "Failed to rename channel" });
+  }
+});
+
+// Mute a user in a server
+router.post("/:serverId/mute", async (req, res) => {
+  try {
+    const { serverId } = req.params;
+    const { userId: targetUserId, duration, reason } = req.body; // duration in minutes
+    const requesterId = req.userId;
+
+    if (!targetUserId || !duration) {
+      return res
+        .status(400)
+        .json({ error: "User ID and duration are required" });
+    }
+
+    const db = getDb();
+    const serversCollection = db.collection("servers");
+
+    // Find server and check if requester is owner
+    const server = await serversCollection.findOne({
+      _id: new ObjectId(serverId),
+    });
+
+    if (!server) {
+      return res.status(404).json({ error: "Server not found" });
+    }
+
+    if (server.ownerId.toString() !== requesterId) {
+      return res
+        .status(403)
+        .json({ error: "Only server owner can mute users" });
+    }
+
+    // Check if target user is a member
+    const targetMember = server.members.find(
+      (m) => m.userId.toString() === targetUserId
+    );
+
+    if (!targetMember) {
+      return res
+        .status(404)
+        .json({ error: "User is not a member of this server" });
+    }
+
+    // Cannot mute the owner
+    if (server.ownerId.toString() === targetUserId) {
+      return res.status(400).json({ error: "Cannot mute the server owner" });
+    }
+
+    // Calculate mute end time
+    const mutedUntil = new Date(Date.now() + duration * 60 * 1000);
+
+    // Remove existing mute if present
+    await serversCollection.updateOne(
+      { _id: new ObjectId(serverId) },
+      {
+        $pull: {
+          mutedUsers: { userId: new ObjectId(targetUserId) },
+        },
+      }
+    );
+
+    // Add new mute
+    const muteEntry = {
+      userId: new ObjectId(targetUserId),
+      username: targetMember.username,
+      mutedUntil: mutedUntil,
+      mutedBy: new ObjectId(requesterId),
+      reason: reason || "No reason provided",
+      mutedAt: new Date(),
+    };
+
+    await serversCollection.updateOne(
+      { _id: new ObjectId(serverId) },
+      {
+        $push: { mutedUsers: muteEntry },
+        $set: { updatedAt: new Date() },
+      }
+    );
+
+    res.json({
+      message: "User muted successfully",
+      muteEntry: {
+        ...muteEntry,
+        userId: targetUserId,
+        mutedBy: requesterId,
+      },
+    });
+  } catch (error) {
+    console.error("Error muting user:", error);
+    res.status(500).json({ error: "Failed to mute user" });
+  }
+});
+
+// Unmute a user in a server
+router.delete("/:serverId/mute/:userId", async (req, res) => {
+  try {
+    const { serverId, userId: targetUserId } = req.params;
+    const requesterId = req.userId;
+
+    const db = getDb();
+    const serversCollection = db.collection("servers");
+
+    // Find server and check if requester is owner
+    const server = await serversCollection.findOne({
+      _id: new ObjectId(serverId),
+    });
+
+    if (!server) {
+      return res.status(404).json({ error: "Server not found" });
+    }
+
+    if (server.ownerId.toString() !== requesterId) {
+      return res
+        .status(403)
+        .json({ error: "Only server owner can unmute users" });
+    }
+
+    // Remove mute
+    await serversCollection.updateOne(
+      { _id: new ObjectId(serverId) },
+      {
+        $pull: {
+          mutedUsers: { userId: new ObjectId(targetUserId) },
+        },
+        $set: { updatedAt: new Date() },
+      }
+    );
+
+    res.json({ message: "User unmuted successfully" });
+  } catch (error) {
+    console.error("Error unmuting user:", error);
+    res.status(500).json({ error: "Failed to unmute user" });
+  }
+});
+
+// Get muted users for a server
+router.get("/:serverId/muted", async (req, res) => {
+  try {
+    const { serverId } = req.params;
+    const userId = req.userId;
+
+    const db = getDb();
+    const serversCollection = db.collection("servers");
+
+    const server = await serversCollection.findOne({
+      _id: new ObjectId(serverId),
+      "members.userId": new ObjectId(userId),
+    });
+
+    if (!server) {
+      return res
+        .status(404)
+        .json({ error: "Server not found or access denied" });
+    }
+
+    // Filter out expired mutes
+    const now = new Date();
+    const activeMutes = (server.mutedUsers || []).filter(
+      (mute) => new Date(mute.mutedUntil) > now
+    );
+
+    res.json(activeMutes);
+  } catch (error) {
+    console.error("Error fetching muted users:", error);
+    res.status(500).json({ error: "Failed to fetch muted users" });
   }
 });
 

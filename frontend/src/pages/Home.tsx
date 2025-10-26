@@ -33,12 +33,15 @@ import {
   Bell,
   BellOff,
   Edit,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useServer } from "@/contexts/ServerContext";
 import ServerModal from "@/components/ServerModal";
 import ProfileModal from "@/components/ProfileModal";
 import ServerIconModal from "@/components/ServerIconModal";
+import MuteUserDialog from "@/components/MuteUserDialog";
 import { API_URL } from "@/config";
 import "../index.css";
 
@@ -70,6 +73,7 @@ type Message = {
 };
 
 type UserPresence = {
+  userId?: string;
   username: string;
   displayName: string;
   avatar?: string;
@@ -136,6 +140,19 @@ export default function Home() {
   } | null>(null);
   const [renameChannelName, setRenameChannelName] = useState("");
   const [updatingChannel, setUpdatingChannel] = useState(false);
+  const [showMuteDialog, setShowMuteDialog] = useState(false);
+  const [userToMute, setUserToMute] = useState<{
+    userId: string;
+    username: string;
+  } | null>(null);
+  const [mutedUsers, setMutedUsers] = useState<
+    Array<{
+      userId: string;
+      username: string;
+      mutedUntil: string;
+      reason: string;
+    }>
+  >([]);
 
   const username = user?.username || "Guest";
 
@@ -261,6 +278,63 @@ export default function Home() {
     }
   };
 
+  // Fetch muted users for the current server
+  const fetchMutedUsers = async () => {
+    if (!currentServer) return;
+
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(
+        `${API_URL}/api/servers/${currentServer._id}/muted`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (response.ok) {
+        const muted = await response.json();
+        setMutedUsers(muted);
+      }
+    } catch (error) {
+      console.error("Error fetching muted users:", error);
+    }
+  };
+
+  // Unmute a user
+  const handleUnmute = async (userId: string) => {
+    if (!currentServer) return;
+
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(
+        `${API_URL}/api/servers/${currentServer._id}/mute/${userId}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (response.ok) {
+        await fetchMutedUsers();
+      } else {
+        const error = await response.json();
+        alert(error.error || "Failed to unmute user");
+      }
+    } catch (error) {
+      console.error("Error unmuting user:", error);
+      alert("Failed to unmute user");
+    }
+  };
+
+  // Check if a user is muted
+  const isUserMuted = (username: string) => {
+    return mutedUsers.some((mute) => mute.username === username);
+  };
+
   // Get pinned messages
   const pinnedMessages = messages.filter((m) => m.pinned);
 
@@ -307,14 +381,11 @@ export default function Home() {
     const loadInitialMentions = async () => {
       try {
         const token = localStorage.getItem("token");
-        const response = await fetch(
-          `${API_URL}/api/notifications/mentions`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
+        const response = await fetch(`${API_URL}/api/notifications/mentions`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
 
         if (response.ok) {
           const mentions = await response.json();
@@ -406,6 +477,38 @@ export default function Home() {
     };
 
     fetchServerMembers();
+  }, [currentServer]);
+
+  // Fetch muted users when server changes
+  useEffect(() => {
+    if (currentServer) {
+      fetchMutedUsers();
+    } else {
+      setMutedUsers([]);
+    }
+  }, [currentServer]);
+
+  // Listen for mute errors from socket
+  useEffect(() => {
+    const handleMessageError = (data: {
+      error: string;
+      mutedUntil?: string;
+      reason?: string;
+    }) => {
+      if (data.error.includes("muted")) {
+        alert(data.error + (data.reason ? `\nReason: ${data.reason}` : ""));
+        // Refresh muted users list
+        fetchMutedUsers();
+      } else {
+        alert(data.error);
+      }
+    };
+
+    socket.on("messageError", handleMessageError);
+
+    return () => {
+      socket.off("messageError", handleMessageError);
+    };
   }, [currentServer]);
 
   // Update presence when user profile changes (displayName or avatar)
@@ -2283,37 +2386,89 @@ export default function Home() {
                     No one else here yet
                   </p>
                 ) : (
-                  presence.map((p, i) => (
-                    <div
-                      key={`${p.username}-${i}`}
-                      className="relative group flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-neutral-800/50 transition-all cursor-pointer"
-                    >
-                      <div className="relative">
-                        <Avatar className="h-8 w-8 transition-transform group-hover:scale-110">
-                          {p.avatar ? (
-                            <AvatarImage src={p.avatar} alt={p.displayName} />
-                          ) : null}
-                          <AvatarFallback
-                            className={getColorFromName(p.displayName)}
-                          >
-                            {getInitials(p.displayName)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="absolute -bottom-0.5 -right-0.5 h-3 w-3 bg-green-500 border-2 border-neutral-900 rounded-full" />
+                  presence.map((p, i) => {
+                    const isMuted = isUserMuted(p.username);
+                    const isOwner = currentServer?.ownerId === user?.id;
+                    const isNotSelf = p.username !== username;
+
+                    return (
+                      <div
+                        key={`${p.username}-${i}`}
+                        className="relative group flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-neutral-800/50 transition-all"
+                      >
+                        <div className="relative">
+                          <Avatar className="h-8 w-8 transition-transform group-hover:scale-110">
+                            {p.avatar ? (
+                              <AvatarImage src={p.avatar} alt={p.displayName} />
+                            ) : null}
+                            <AvatarFallback
+                              className={getColorFromName(p.displayName)}
+                            >
+                              {getInitials(p.displayName)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="absolute -bottom-0.5 -right-0.5 h-3 w-3 bg-green-500 border-2 border-neutral-900 rounded-full" />
+                          {isMuted && (
+                            <div className="absolute -top-1 -right-1 bg-red-600 rounded-full p-0.5">
+                              <VolumeX className="h-2.5 w-2.5 text-white" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1 flex flex-col min-w-0">
+                          <span className="text-sm font-medium text-white truncate">
+                            {p.displayName}
+                            {isMuted && (
+                              <span className="ml-1 text-xs text-red-400">
+                                (Muted)
+                              </span>
+                            )}
+                          </span>
+                          <span className="text-xs text-neutral-500">
+                            @{p.username}
+                          </span>
+                        </div>
+                        {isOwner && isNotSelf && (
+                          <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                            {isMuted ? (
+                              <button
+                                onClick={() => {
+                                  const mutedUser = mutedUsers.find(
+                                    (m) => m.username === p.username
+                                  );
+                                  if (mutedUser) {
+                                    handleUnmute(mutedUser.userId);
+                                  }
+                                }}
+                                className="p-1 hover:bg-green-600/20 rounded transition-all"
+                                title="Unmute user"
+                              >
+                                <Volume2 className="h-4 w-4 text-green-400" />
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => {
+                                  const member = serverMembers.find(
+                                    (m) => m.username === p.username
+                                  );
+                                  if (member && member.userId) {
+                                    setUserToMute({
+                                      userId: member.userId,
+                                      username: member.username,
+                                    });
+                                    setShowMuteDialog(true);
+                                  }
+                                }}
+                                className="p-1 hover:bg-red-600/20 rounded transition-all"
+                                title="Mute user"
+                              >
+                                <VolumeX className="h-4 w-4 text-red-400" />
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
-                      <div className="flex flex-col">
-                        <span className="text-sm font-medium text-white">
-                          {p.displayName}
-                        </span>
-                        <span className="text-xs text-neutral-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                          @{p.username}
-                        </span>
-                      </div>
-                      <span className="absolute left-full ml-2 hidden group-hover:flex bg-linear-to-r from-green-600 to-emerald-600 text-white text-xs px-2 py-1 rounded shadow-lg whitespace-nowrap z-50">
-                        Online
-                      </span>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </aside>
@@ -2740,7 +2895,21 @@ export default function Home() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Mute User Dialog */}
+      {userToMute && currentServer && (
+        <MuteUserDialog
+          open={showMuteDialog}
+          onOpenChange={setShowMuteDialog}
+          serverId={currentServer._id}
+          userId={userToMute.userId}
+          username={userToMute.username}
+          onMuteSuccess={() => {
+            fetchMutedUsers();
+            setUserToMute(null);
+          }}
+        />
+      )}
     </div>
   );
 }
-

@@ -417,6 +417,31 @@ io.on("connection", (socket) => {
         const db = mongoose.connection.db;
         const { ObjectId } = require("mongodb");
 
+        // Check if user is muted
+        const server = await db
+          .collection("servers")
+          .findOne({ _id: new ObjectId(serverId) });
+
+        if (server && server.mutedUsers) {
+          const now = new Date();
+          const userMute = server.mutedUsers.find(
+            (mute) =>
+              mute.username === username && new Date(mute.mutedUntil) > now
+          );
+
+          if (userMute) {
+            const timeRemaining = Math.ceil(
+              (new Date(userMute.mutedUntil) - now) / 1000 / 60
+            ); // in minutes
+            socket.emit("messageError", {
+              error: `You are muted in this server. Time remaining: ${timeRemaining} minute(s)`,
+              mutedUntil: userMute.mutedUntil,
+              reason: userMute.reason,
+            });
+            return;
+          }
+        }
+
         // Extract mentions from text (format: @username)
         const mentionRegex = /@(\w+)/g;
         const mentions = [];

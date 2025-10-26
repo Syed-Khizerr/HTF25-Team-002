@@ -57,7 +57,10 @@ export function ServerProvider({ children }: { children: React.ReactNode }) {
 
     try {
       setLoading(true);
-      const response = await axios.get(`${API_URL}/api/servers`, getAuthHeaders());
+      const response = await axios.get(
+        `${API_URL}/api/servers`,
+        getAuthHeaders()
+      );
       setServers(response.data);
 
       // Auto-select first server if none selected

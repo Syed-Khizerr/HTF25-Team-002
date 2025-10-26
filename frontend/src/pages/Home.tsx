@@ -124,8 +124,91 @@ export default function Home() {
     useState(false);
   const [pushNotificationsEnabled, setPushNotificationsEnabled] =
     useState(false);
+  const [showChannelManage, setShowChannelManage] = useState(false);
+  const [newChannelName, setNewChannelName] = useState("");
+  const [creatingChannel, setCreatingChannel] = useState(false);
 
   const username = user?.username || "Guest";
+
+  // Create a new channel
+  const createChannel = async () => {
+    if (!currentServer || !newChannelName.trim()) return;
+
+    setCreatingChannel(true);
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(
+        `http://localhost:5000/api/servers/${currentServer._id}/channels`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ name: newChannelName.trim() }),
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log("Channel created:", data);
+        setNewChannelName("");
+        setShowChannelManage(false);
+        // Refresh channels by re-fetching from server context
+        window.location.reload(); // Simple refresh for now
+      } else {
+        const error = await response.json();
+        alert(error.error || "Failed to create channel");
+      }
+    } catch (error) {
+      console.error("Error creating channel:", error);
+      alert("Failed to create channel");
+    } finally {
+      setCreatingChannel(false);
+    }
+  };
+
+  // Delete a channel
+  const deleteChannel = async (channelId: string, channelName: string) => {
+    if (!currentServer) return;
+
+    if (
+      !confirm(
+        `Are you sure you want to delete #${channelName}? All messages will be permanently deleted.`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(
+        `http://localhost:5000/api/servers/${currentServer._id}/channels/${channelId}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (response.ok) {
+        console.log("Channel deleted");
+        // If current room was deleted, switch to first available channel
+        if (currentRoom === channelName) {
+          setCurrentRoom(null);
+        }
+        // Refresh channels
+        window.location.reload();
+      } else {
+        const error = await response.json();
+        alert(error.error || "Failed to delete channel");
+      }
+    } catch (error) {
+      console.error("Error deleting channel:", error);
+      alert("Failed to delete channel");
+    }
+  };
 
   // Get pinned messages
   const pinnedMessages = messages.filter((m) => m.pinned);
@@ -1106,7 +1189,7 @@ export default function Home() {
                 ) : (
                   <BellOff className="h-4 w-4" />
                 )}
-                <span className="absolute right-full mr-2 top-1/2 -translate-y-1/2 hidden group-hover:flex bg-linear-to-r from-blue-600 to-purple-600 text-white text-xs px-3 py-1.5 rounded-lg shadow-elevation-high whitespace-nowrap z-50 backdrop-blur-sm border border-white/10 animate-in fade-in slide-in-from-right-2">
+                <span className="absolute top-full mt-1   hidden group-hover:flex bg-linear-to-r from-blue-600 to-purple-600 text-white text-xs px-3 py-1.5 rounded-lg shadow-elevation-high whitespace-nowrap z-50 backdrop-blur-sm border border-white/10 animate-in fade-in slide-in-from-right-2">
                   Notifications
                 </span>
               </Button>
@@ -1117,7 +1200,7 @@ export default function Home() {
                 className="relative group h-8 w-8 p-0 text-neutral-400 hover:text-white hover:bg-neutral-800/70 hover:scale-110 transition-all duration-200 rounded-lg"
               >
                 <UserPlus className="h-4 w-4" />
-                <span className="absolute right-full mr-2 top-1/2 -translate-y-1/2 hidden group-hover:flex bg-linear-to-r from-blue-600 to-purple-600 text-white text-xs px-3 py-1.5 rounded-lg shadow-elevation-high whitespace-nowrap z-50 backdrop-blur-sm border border-white/10 animate-in fade-in slide-in-from-right-2">
+                <span className="absolute  top-full mt-1 hidden group-hover:flex bg-linear-to-r from-blue-600 to-purple-600 text-white text-xs px-3 py-1.5 rounded-lg shadow-elevation-high whitespace-nowrap z-50 backdrop-blur-sm border border-white/10 animate-in fade-in slide-in-from-right-2">
                   Invite People
                 </span>
               </Button>
@@ -1130,8 +1213,17 @@ export default function Home() {
         </div>
 
         <div className="flex-1 p-3 overflow-auto space-y-1">
-          <div className="text-xs font-bold px-2 py-2 text-neutral-500 tracking-wider">
-            TEXT CHANNELS
+          <div className="text-xs font-bold px-2 py-2 text-neutral-500 tracking-wider flex items-center justify-between">
+            <span>TEXT CHANNELS</span>
+            {currentServer?.ownerId === user?.id && (
+              <button
+                onClick={() => setShowChannelManage(true)}
+                className="p-1 hover:bg-neutral-700 rounded transition-colors"
+                title="Add Channel"
+              >
+                <Plus className="h-4 w-4" />
+              </button>
+            )}
           </div>
           {channels.map((channel, index) => (
             <button
@@ -1151,6 +1243,18 @@ export default function Home() {
                   <span className="w-2 h-2 bg-red-600 rounded-full animate-pulse shadow-glow"></span>
                 )}
               </span>
+              {currentServer?.ownerId === user?.id && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deleteChannel(channel._id, channel.name);
+                  }}
+                  className="ml-auto opacity-0 group-hover:opacity-100 p-1 hover:bg-red-600/20 rounded transition-all"
+                  title="Delete Channel"
+                >
+                  <Trash2 className="h-3 w-3 text-red-400" />
+                </button>
+              )}
               {currentRoom === channel.name && (
                 <div className="absolute inset-0 bg-linear-to-r from-blue-600/20 to-purple-600/20 blur-xl -z-10"></div>
               )}
@@ -2449,6 +2553,58 @@ export default function Home() {
                 </div>
               ))
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Channel Management Dialog */}
+      <Dialog open={showChannelManage} onOpenChange={setShowChannelManage}>
+        <DialogContent className="bg-neutral-900 border-neutral-800 text-white">
+          <DialogHeader>
+            <DialogTitle>Create Channel</DialogTitle>
+            <DialogDescription className="text-neutral-400">
+              Create a new text channel in {currentServer?.name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-neutral-300">
+                Channel Name
+              </label>
+              <Input
+                value={newChannelName}
+                onChange={(e) => setNewChannelName(e.target.value)}
+                placeholder="new-channel"
+                className="bg-neutral-800 border-neutral-700 text-white"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && newChannelName.trim()) {
+                    createChannel();
+                  }
+                }}
+              />
+              <p className="text-xs text-neutral-500">
+                Use lowercase letters, numbers, and hyphens only
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setShowChannelManage(false);
+                setNewChannelName("");
+              }}
+              className="hover:bg-neutral-800"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={createChannel}
+              disabled={creatingChannel || !newChannelName.trim()}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              {creatingChannel ? "Creating..." : "Create Channel"}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

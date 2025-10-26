@@ -348,4 +348,142 @@ router.get("/:serverId/members", async (req, res) => {
   }
 });
 
+// Create a new channel in a server
+router.post("/:serverId/channels", async (req, res) => {
+  try {
+    const { serverId } = req.params;
+    const { name } = req.body;
+    const userId = req.userId;
+
+    if (!name || name.trim().length === 0) {
+      return res.status(400).json({ error: "Channel name is required" });
+    }
+
+    // Validate channel name (alphanumeric and hyphens only)
+    const channelName = name.trim().toLowerCase().replace(/\s+/g, "-");
+    if (!/^[a-z0-9-]+$/.test(channelName)) {
+      return res.status(400).json({
+        error: "Channel name can only contain letters, numbers, and hyphens",
+      });
+    }
+
+    const db = getDb();
+    const serversCollection = db.collection("servers");
+    const roomsCollection = db.collection("rooms");
+
+    // Find the server and check if user is owner
+    const server = await serversCollection.findOne({
+      _id: new ObjectId(serverId),
+    });
+
+    if (!server) {
+      return res.status(404).json({ error: "Server not found" });
+    }
+
+    // Check if user is owner
+    if (server.ownerId.toString() !== userId) {
+      return res.status(403).json({
+        error: "Only the server owner can create channels",
+      });
+    }
+
+    // Check if channel already exists
+    const existingChannel = await roomsCollection.findOne({
+      serverId: new ObjectId(serverId),
+      name: channelName,
+    });
+
+    if (existingChannel) {
+      return res.status(400).json({
+        error: "A channel with this name already exists",
+      });
+    }
+
+    // Create new channel
+    const newChannel = {
+      name: channelName,
+      serverId: new ObjectId(serverId),
+      createdAt: new Date(),
+    };
+
+    const result = await roomsCollection.insertOne(newChannel);
+    newChannel._id = result.insertedId;
+
+    res.status(201).json({
+      message: "Channel created successfully",
+      channel: newChannel,
+    });
+  } catch (error) {
+    console.error("Error creating channel:", error);
+    res.status(500).json({ error: "Failed to create channel" });
+  }
+});
+
+// Delete a channel from a server
+router.delete("/:serverId/channels/:channelId", async (req, res) => {
+  try {
+    const { serverId, channelId } = req.params;
+    const userId = req.userId;
+
+    const db = getDb();
+    const serversCollection = db.collection("servers");
+    const roomsCollection = db.collection("rooms");
+    const messagesCollection = db.collection("messages");
+
+    // Find the server and check if user is owner
+    const server = await serversCollection.findOne({
+      _id: new ObjectId(serverId),
+    });
+
+    if (!server) {
+      return res.status(404).json({ error: "Server not found" });
+    }
+
+    // Check if user is owner
+    if (server.ownerId.toString() !== userId) {
+      return res.status(403).json({
+        error: "Only the server owner can delete channels",
+      });
+    }
+
+    // Find the channel
+    const channel = await roomsCollection.findOne({
+      _id: new ObjectId(channelId),
+      serverId: new ObjectId(serverId),
+    });
+
+    if (!channel) {
+      return res.status(404).json({ error: "Channel not found" });
+    }
+
+    // Prevent deleting the last channel
+    const channelCount = await roomsCollection.countDocuments({
+      serverId: new ObjectId(serverId),
+    });
+
+    if (channelCount <= 1) {
+      return res.status(400).json({
+        error: "Cannot delete the last channel in a server",
+      });
+    }
+
+    // Delete the channel
+    await roomsCollection.deleteOne({ _id: new ObjectId(channelId) });
+
+    // Delete all messages in the channel
+    await messagesCollection.deleteMany({
+      room: channel.name,
+      serverId: new ObjectId(serverId),
+    });
+
+    res.json({
+      message: "Channel deleted successfully",
+      channelId: channelId,
+    });
+  } catch (error) {
+    console.error("Error deleting channel:", error);
+    res.status(500).json({ error: "Failed to delete channel" });
+  }
+});
+
 module.exports = router;

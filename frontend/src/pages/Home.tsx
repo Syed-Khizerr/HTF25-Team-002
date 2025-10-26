@@ -39,7 +39,7 @@ import { useServer } from "@/contexts/ServerContext";
 import ServerModal from "@/components/ServerModal";
 import ProfileModal from "@/components/ProfileModal";
 import ServerIconModal from "@/components/ServerIconModal";
-import "../Index.css";
+import "../index.css";
 
 type Message = {
   _id: string;

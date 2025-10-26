@@ -421,6 +421,15 @@ export default function Home() {
       if (part.startsWith("@")) {
         const mentionedUsername = part.substring(1);
         const isCurrentUser = mentionedUsername === username;
+        const userExists = presence.some(
+          (user) => user.username === mentionedUsername
+        );
+
+        // Only highlight if user exists in the server
+        if (!userExists) {
+          return <span key={i}>{part}</span>;
+        }
+
         return (
           <span
             key={i}
@@ -471,6 +480,63 @@ export default function Home() {
     const newText = text.slice(0, lastAtIndex) + `@${user.username} `;
     setText(newText);
     setMentionSuggestions([]);
+  };
+
+  // Function to render text with highlighted mentions
+  const renderTextWithMentions = (inputText: string) => {
+    // Match @username patterns (username can contain letters, numbers, underscores, hyphens)
+    const mentionRegex = /@([\w-]+)/g;
+    const parts = [];
+    let lastIndex = 0;
+    let match;
+
+    while ((match = mentionRegex.exec(inputText)) !== null) {
+      // Add text before the mention
+      if (match.index > lastIndex) {
+        parts.push(
+          <span key={`text-${lastIndex}`} className="text-white">
+            {inputText.slice(lastIndex, match.index)}
+          </span>
+        );
+      }
+
+      // Check if the mentioned user exists in the server
+      const mentionedUsername = match[1]; // Get username without @
+      const userExists = presence.some(
+        (user) => user.username === mentionedUsername
+      );
+
+      // Add the mention (highlighted only if user exists)
+      parts.push(
+        <span
+          key={`mention-${match.index}`}
+          className={
+            userExists
+              ? "bg-blue-600/40 text-blue-400 px-1 rounded"
+              : "text-white"
+          }
+        >
+          {match[0]}
+        </span>
+      );
+      lastIndex = match.index + match[0].length;
+    }
+
+    // Add remaining text
+    if (lastIndex < inputText.length) {
+      parts.push(
+        <span key={`text-${lastIndex}`} className="text-white">
+          {inputText.slice(lastIndex)}
+        </span>
+      );
+    }
+
+    // If no mentions found, return the whole text in white
+    if (parts.length === 0) {
+      return <span className="text-white">{inputText}</span>;
+    }
+
+    return parts;
   };
 
   const copyInviteCode = async () => {
@@ -574,7 +640,7 @@ export default function Home() {
       </aside>
 
       {/* Channel Sidebar */}
-      <aside className="pt-4 w-64 z-[1] flex flex-col bg-neutral-900/95 backdrop-blur-md border-r border-white/5 text-white shadow-elevation-medium">
+      <aside className="pt-4 w-64 z-1 flex flex-col bg-neutral-900/95 backdrop-blur-md border-r border-white/5 text-white shadow-elevation-medium">
         <div className="position-relative px-4">
           <div className="flex items-center justify-between mb-2">
             <h1 className="text-xl font-bold bg-linear-to-r from-blue-600 via-purple-600 to-blue-600 bg-clip-text text-transparent transition-all duration-500 hover:pb-2 hover:scale-105 hover:cursor-pointer bg-size-[200%] hover:bg-right animate-in fade-in slide-in-from-left-3">
@@ -1502,37 +1568,49 @@ export default function Home() {
                 >
                   <Smile className="h-5 w-5 text-neutral-400" />
                 </Button>
-                <Input
-                  value={text}
-                  onChange={handleInputChange}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      if (mentionSuggestions.length > 0) {
+                <div className="flex-1 flex flex-col gap-1">
+                  {/* Preview span showing highlighted mentions */}
+                  {text && (
+                    <div className="px-3 py-1 bg-neutral-800/50 rounded text-sm">
+                      {renderTextWithMentions(text)}
+                    </div>
+                  )}
+                  {/* Normal input */}
+                  <Input
+                    value={text}
+                    onChange={handleInputChange}
+                    onKeyDown={(e) => {
+                      if (e.key === "Tab" && mentionSuggestions.length > 0) {
+                        e.preventDefault();
                         insertMention(mentionSuggestions[0]);
-                      } else {
-                        sendMessage();
+                      } else if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        if (mentionSuggestions.length > 0) {
+                          insertMention(mentionSuggestions[0]);
+                        } else {
+                          sendMessage();
+                        }
+                      } else if (e.key === "Escape") {
+                        if (mentionSuggestions.length > 0) {
+                          setMentionSuggestions([]);
+                        } else {
+                          setReplyingTo(null);
+                        }
                       }
-                    } else if (e.key === "Escape") {
-                      if (mentionSuggestions.length > 0) {
-                        setMentionSuggestions([]);
-                      } else {
-                        setReplyingTo(null);
-                      }
+                    }}
+                    placeholder={
+                      currentRoom
+                        ? replyingTo
+                          ? `Reply to ${
+                              replyingTo.displayName || replyingTo.username
+                            }...`
+                          : `Message #${currentRoom}`
+                        : "Select a channel first"
                     }
-                  }}
-                  placeholder={
-                    currentRoom
-                      ? replyingTo
-                        ? `Reply to ${
-                            replyingTo.displayName || replyingTo.username
-                          }...`
-                        : `Message #${currentRoom}`
-                      : "Select a channel first"
-                  }
-                  className="flex-1 bg-neutral-700 selection:bg-blue-500 decoration-0 border-none text-white placeholder:text-neutral-500 active:outline-none focus:outline-none"
-                  disabled={!currentRoom || uploading}
-                />
+                    className="bg-neutral-700 selection:bg-blue-500 border-none text-white placeholder:text-neutral-500 active:outline-none focus:outline-none"
+                    disabled={!currentRoom || uploading}
+                  />
+                </div>
                 <Button
                   onClick={sendMessage}
                   disabled={

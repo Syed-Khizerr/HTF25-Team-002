@@ -299,4 +299,53 @@ router.put("/:serverId/icon", async (req, res) => {
   }
 });
 
+// Get all members of a server
+router.get("/:serverId/members", async (req, res) => {
+  try {
+    const { serverId } = req.params;
+    const userId = req.userId;
+
+    const db = getDb();
+    const serversCollection = db.collection("servers");
+    const usersCollection = db.collection("users");
+
+    // Find the server
+    const server = await serversCollection.findOne({
+      _id: new ObjectId(serverId),
+    });
+
+    if (!server) {
+      return res.status(404).json({ error: "Server not found" });
+    }
+
+    // Check if user is a member
+    const isMember = server.members.some((m) => m.userId.toString() === userId);
+
+    if (!isMember) {
+      return res
+        .status(403)
+        .json({ error: "You are not a member of this server" });
+    }
+
+    // Get user details for all members
+    const memberUserIds = server.members.map((m) => m.userId);
+    const users = await usersCollection
+      .find({ _id: { $in: memberUserIds } })
+      .project({ username: 1, displayName: 1, avatar: 1 })
+      .toArray();
+
+    // Map to user details
+    const members = users.map((user) => ({
+      username: user.username,
+      displayName: user.displayName || user.username,
+      avatar: user.avatar || null,
+    }));
+
+    res.json(members);
+  } catch (error) {
+    console.error("Error fetching server members:", error);
+    res.status(500).json({ error: "Failed to fetch server members" });
+  }
+});
+
 module.exports = router;

@@ -1,3 +1,14 @@
+# ==========================================
+# Frontend .gitignore
+# ==========================================
+
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+.yarn/
+.pnpm-store/
+
 # Logs
 logs
 *.log
@@ -7,35 +18,37 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-# Dependencies
-node_modules
-.pnp
-.pnp.js
-
 # Build outputs
-dist
-dist-ssr
-build
+dist/
+dist-ssr/
+build/
 *.local
+.vite/
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
 
-# Environment variables
+# Environment variables (SENSITIVE!)
 .env
 .env.local
+.env.development
 .env.development.local
+.env.test
 .env.test.local
+.env.production
 .env.production.local
 *.env
+!.env.example
 
 # Testing
 /coverage
 .nyc_output/
+*.lcov
 
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json
 .idea
-.DS_Store
 *.suo
 *.ntvs*
 *.njsproj
@@ -45,19 +58,17 @@ build
 *.swo
 *~
 
-# Vite
-.vite/
-vite.config.js.timestamp-*
-vite.config.ts.timestamp-*
+# OS
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+*.pem
+desktop.ini
 
 # TypeScript
 *.tsbuildinfo
 next-env.d.ts
-
-# OS
-Thumbs.db
-*.pem
-desktop.ini
 
 # Cache
 .eslintcache
@@ -75,12 +86,18 @@ desktop.ini
 package-lock.json
 yarn.lock
 pnpm-lock.yaml
-.yarn/
-.pnpm-store/
 
 # Tailwind
 .tailwindcss/
 
-# PWA
+# PWA & Service Workers
 sw.js
 workbox-*.js
+precache-manifest.*.js
+
+# Deployment
+.vercel
+.netlify
+
+# Storybook
+storybook-static/

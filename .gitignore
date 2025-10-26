@@ -1,21 +1,38 @@
-# Dependencies
+# ==========================================
+# Dependencies & Package Managers
+# ==========================================
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+lerna-debug.log*
 .pnp
 .pnp.js
+.yarn/
+.pnpm-store/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
 
-# Environment variables
+# ==========================================
+# Environment Variables (SENSITIVE!)
+# ==========================================
 .env
 .env.local
+.env.development
 .env.development.local
+.env.test
 .env.test.local
+.env.production
 .env.production.local
+.env.*.local
 *.env
+!.env.example
 
-# IDE/Editor
+# ==========================================
+# IDE & Editor Files
+# ==========================================
 .vscode/
 !.vscode/extensions.json
 !.vscode/settings.json
@@ -23,94 +40,158 @@ pnpm-debug.log*
 *.swp
 *.swo
 *~
-.DS_Store
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
+.project
+.settings/
+.classpath
 
-# Build outputs
+# ==========================================
+# OS Files
+# ==========================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+*.pem
+
+# ==========================================
+# Build Outputs
+# ==========================================
 dist/
+dist-ssr/
 build/
-*.log
 .cache/
 .parcel-cache/
+.vite/
+*.local
 
-# OS files
-Thumbs.db
-*.pem
-desktop.ini
+# ==========================================
+# Logs
+# ==========================================
+logs/
+*.log
+*.log.*
+npm-debug.log*
+combined.log
+error.log
+lerna-debug.log*
 
-# Testing
+# ==========================================
+# Testing & Coverage
+# ==========================================
 coverage/
 .nyc_output/
+*.lcov
+.jest/
 
-# Temporary files
-*.tmp
-*.temp
-.temp/
-.tmp/
-
-# Package manager
-package-lock.json
-yarn.lock
-pnpm-lock.yaml
-.yarn/
-.pnpm-store/
-
+# ==========================================
 # TypeScript
+# ==========================================
 *.tsbuildinfo
+next-env.d.ts
 
-# Uploads directory (user-generated content)
-uploads/
-backend/uploads/
-backend/server/uploads/
-
-# Database files (if using local SQLite)
-*.db
-*.sqlite
-*.sqlite3
-
-# Cache
+# ==========================================
+# Cache Files
+# ==========================================
 .eslintcache
 .stylelintcache
 *.cache
+.cache/
+.temp/
+.tmp/
+*.tmp
+*.temp
+
+# ==========================================
+# User Uploads & File Storage
+# ==========================================
+uploads/
+backend/uploads/
+backend/server/uploads/
+public/uploads/
+static/uploads/
+
+# ==========================================
+# Database Files
+# ==========================================
+*.db
+*.sqlite
+*.sqlite3
+data/
+mongo-data/
+*.lock
+sessions/
+*.session
+
+# ==========================================
+# Framework-Specific
+# ==========================================
 
 # Next.js
 .next/
 out/
 
 # Vite
-.vite/
-dist-ssr/
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
 
-# Service Worker
-sw.js
-workbox-*.js
+# Tailwind
+.tailwindcss/
 
 # React
 .react-refresh
 
-# MongoDB
-data/
-mongo-data/
-*.lock
+# Service Workers & PWA
+sw.js
+workbox-*.js
+precache-manifest.*.js
 
-# Logs
-logs/
-*.log.*
-combined.log
-error.log
-
-# PM2
+# ==========================================
+# Process Managers
+# ==========================================
 .pm2/
 pm2.log
+ecosystem.config.js
 
+# ==========================================
 # Docker
+# ==========================================
 .dockerignore
 docker-compose.override.yml
+.docker/
 
-# Backup files
+# ==========================================
+# Backup & Temporary Files
+# ==========================================
 *.bak
 *.backup
+*.old
+*.orig
+*~
+
+# ==========================================
+# Security & Certificates
+# ==========================================
+*.key
+*.cert
+*.crt
+*.csr
+*.pem
+*.p12
+*.pfx
+
+# ==========================================
+# Other
+# ==========================================
+.vercel
+.netlify
+.serverless/
+.fusebox/

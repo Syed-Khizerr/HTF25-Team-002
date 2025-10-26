@@ -26,7 +26,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const API_URL = "http://localhost:5000/api/auth";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -46,7 +46,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Verify token with backend
   const verifyToken = async (authToken: string) => {
     try {
-      const response = await axios.get(`${API_URL}/verify`, {
+      const response = await axios.get(`${API_URL}/api/auth/verify`, {
         headers: { Authorization: `Bearer ${authToken}` },
       });
       setUser(response.data.user);
@@ -64,7 +64,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Login function
   const login = async (email: string, password: string) => {
     try {
-      const response = await axios.post(`${API_URL}/login`, {
+      const response = await axios.post(`${API_URL}/api/auth/login`, {
         email,
         password,
       });
@@ -85,7 +85,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     displayName?: string
   ) => {
     try {
-      const response = await axios.post(`${API_URL}/signup`, {
+      const response = await axios.post(`${API_URL}/api/auth/signup`, {
         email,
         password,
         displayName,
@@ -103,7 +103,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Google login function
   const googleLogin = async (googleData: any) => {
     try {
-      const response = await axios.post(`${API_URL}/google`, googleData);
+      const response = await axios.post(
+        `${API_URL}/api/auth/google`,
+        googleData
+      );
       const { token: authToken, user: userData } = response.data;
       localStorage.setItem("token", authToken);
       setToken(authToken);
@@ -129,7 +132,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       const response = await axios.put(
-        `${API_URL}/profile`,
+        `${API_URL}/api/auth/profile`,
         { displayName },
         {
           headers: { Authorization: `Bearer ${token}` },

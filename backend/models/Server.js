@@ -29,6 +29,28 @@ const serverSchema = new mongoose.Schema({
       },
     },
   ],
+  mutedUsers: [
+    {
+      userId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+      username: String,
+      mutedUntil: {
+        type: Date,
+        required: true,
+      },
+      mutedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+      reason: String,
+      mutedAt: {
+        type: Date,
+        default: Date.now,
+      },
+    },
+  ],
   inviteCode: {
     type: String,
     unique: true,
